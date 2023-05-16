@@ -32,7 +32,7 @@ USR_LIB=$(QL_SDK_PATH)/lib/libql_peripheral.a
 #---------------------
 # Source code files
 #---------------------
-LOCAL_SRC_FILES = $(QL_EXP_TARGETS).c rtc.c
+LOCAL_SRC_FILES = $(QL_EXP_TARGETS).c rtc.c can_socket_isotp.c can_OBDII.c
 
 $(QL_EXP_TARGETS): 
 	$(COMPILE.c) $(CPPFLAGS) $(LDFLAGS) $(LOCAL_SRC_FILES) 

@@ -139,7 +139,7 @@ int check_rtc(int* fd_i2c);
 
 
 void MEMS_process_moving_avg(int window, int step, int cbk_cnt_min, int cbk_global);
-void MEMS_process_harsh_accel(int window, int step, double x_threshold,double y_threshold,
-double gyr_Z_threshold, int cbk_cnt_min, int cbk_global);
-
+void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x_threshold_pos /*accel*/
+                            ,double x_threshold_neg /*braking*/, double x_threshold_lower, double y_threshold
+                            ,double gyr_z_threshold , double gyr_z_threshold_lower , int cbk_cnt_min, int cbk_global);
 #endif
