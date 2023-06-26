@@ -124,12 +124,14 @@
 
 //Function declarations
 
-void MEMS_process_data(uint8_t* MEMS_r_buff);
+void MEMS_process_data();
 int MEMS_config_sleep(int* fd_i2c);// set MEMS option registers. Enable accel and gyro
 int get_device_orientation(float dataBuff[], int buff_size);
 int MEMS_Read(int* fd_i2c ,uint8_t* MEMS_r_buff);
-float get_pitch(float AccelX, float AccelY, float AccelZ);
-float get_roll(float AccelX, float AccelY, float AccelZ);
+float get_pitch_deg(float AccelX, float AccelY, float AccelZ);
+float get_roll_deg(float AccelX, float AccelY, float AccelZ);
+float get_pitch_rad(float AccelX, float AccelY, float AccelZ);
+float get_roll_rad(float AccelX, float AccelY, float AccelZ);
 int createAccelReadThread(void);
 void* accelRead_func(void* arg);
 int killAccelReadThread(void); 

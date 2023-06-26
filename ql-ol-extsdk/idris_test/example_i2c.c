@@ -35,6 +35,8 @@
 #define MEMS_READ_BUFF_SIZE  12
 #define STARTUP_G_THRESH 0.7  //gravitation accelaration percieved on the sensor
 
+#define GRV_ACC_CONST 0.9830
+
 const double rad_to_deg = 57.295779505601046646705075978956;
 
 bool kill_accel_thread = false, recording = false, event_detect = false; //testing inputs
@@ -42,6 +44,7 @@ bool kill_accel_thread = false, recording = false, event_detect = false; //testi
 void machineEpsilon(float EPS);
 int floatCompare(const void* f1, const void* f2);
 void pollPidISO();
+void calculate_gyro_bias();
 clock_t t_stamp;
 
 uint8_t MEMS_rec_buff[12] = {0x00} , date_time[12] = {0x00};
@@ -62,9 +65,11 @@ const double gyro_scaling_factor = 0.004375;
 const double gyro_offset_X = 0.1366527123;
 const double gyro_offset_Y = -0.3121025943;
 const double gyro_offset_Z = -0.1323354953;
+const double T_gyr = 0.5;
+static float sigGYRX = 0, sigGYRY = 0;
 
-
-
+static float gyr_bias_x = 0, gyr_bias_y = 0, gyr_bias_z = 0;
+float alpha = 0.4;
 double prev_epsilon;
 
 
@@ -82,6 +87,8 @@ float GYRX_BUF1[1024], GYRY_BUF1[1024], GYRZ_BUF1[1024];
 
 float ACCX_BUF2[10], ACCY_BUF2[10], ACCZ_BUF2[10];
 float GYRX_BUF2[10], GYRY_BUF2[10], GYRZ_BUF2[10];
+
+uint8_t brakingOccured , accelOcuured , turnOccured;
 
 uint8_t bufWrite[4500], readBuf[4500];
 
@@ -112,7 +119,7 @@ int main(int argc, char* argv[])
     int err; 
 	int x;      
     void* arg;
-    int can_ret = 0;
+    int can_ret = -1;
 	static char key_press;
     /*
      * Open I2C device with read-write mode,
@@ -150,7 +157,7 @@ int main(int argc, char* argv[])
     fd_i2c = Ql_I2C_Init(I2C_DEV);
 
     fp = fopen ("/home/root/IMU.csv", "w+"); //open new IMU file
-    fprintf(fp,"Tick, ACCELX, ACCELY, ACCELZ, GYRX, GYRY, GYRZ, Event\n");
+    fprintf(fp,"Tick, ACCELX, ACCELY, ACCELZ, GYRX, GYRY, GYRZ, Event, Speed(0D), theta_hat, phi_hat, XNRM, YNRM\n");
 
 
     if (pthread_mutex_init(&kb_lock, NULL) != 0) {
@@ -159,18 +166,17 @@ int main(int argc, char* argv[])
     }
 
 
-    /*//CAN ISO TP
+    //CAN ISO TP
     //ISO
-    can_ret = can_isotp_connect(0x7DF, 0x7E8, true, 0xFF);
-    if(can_ret)
-        printf("\nISO init success");
+    /*can_ret = can_isotp_connect(0x7DF, 0x7E8, true, 0xFF);
+    if(can_ret == 0)
+        printf("\nISOTP init success");
     else
     {
-        printf("\nISO init failed");
+        printf("\nISOTP init failed");
         can_isotp_close();
         return 0;
-    }*/
-
+    */
 
     if(rdBuff[0] == WHO_AM_I_VALUE)
     {
@@ -189,8 +195,14 @@ int main(int argc, char* argv[])
         else
         {
             MEMS_read_config(&fd_i2c);
-            printf("config OK, starting\n");
+            printf("\n\rconfig OK, starting\n");
         }
+
+        printf("\n\rCalculating Gyro bias, wait");
+
+        calculate_gyro_bias();
+
+        printf("\n\r biax = %f, biasy = %f, biasz = %f", gyr_bias_x, gyr_bias_y, gyr_bias_z);
     
         createAccelReadThread();
     }
@@ -278,18 +290,14 @@ void* accelRead_func(void* arg)
 
         //printf("\nbuf1 index = %d", BUF1_index);
 
-        iRet = MEMS_Read(&fd_i2c, MEMS_rec_buff);
-        if(iRet<0)
-        {
-            printf("i2c read failed\n");
-        }
+        
         if(kill_accel_thread)
             pthread_exit(0); 
 
         
 
 
-        MEMS_process_data(MEMS_rec_buff); // convert data to float
+        MEMS_process_data(); // convert data to float
         //iRet = RTC_get_DT(&fd_i2c, date_time);
         //printf("read date time: %s \n", date_time);
         //average window = 8, step = 5, freq = 100ms/20ms = 5
@@ -297,10 +305,18 @@ void* accelRead_func(void* arg)
         //detection window = 25, step = 25, freq = 500ms/20ms = 25
         //4 states of acc>thresh = harsh accel
                                     //  +X     -X   X_min  +-Y   +-Z   Zmin
-        MEMS_process_harsh_accel(25, 5, 0.2, -0.25, 0.05 , 0.1 , 4.5 , 1 ,  5, callback_count);
+        MEMS_process_harsh_accel(25, 5, 0.2, -0.20, 0.05 , 0.1 , 4.5 , 1 ,  5, callback_count);
 
-        //if(callback_count == 0) // every 2 sec 
+        /*if(callback_count%50 == 0) // every 1 sec 
             //pollPidISO();
+            while(0);
+        else
+        {
+           if(recording)  //start recording
+            {
+                fprintf(fp, "\n");  //defaults to newline
+            } 
+        }*/
 
 
         usleep(20 * 1000);
@@ -322,6 +338,10 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
     int i = 0;
     int j = 0;
 
+    float ACCELX_NRM, ACCELY_NRM, ACCELZ_NRM, roll, pitch;
+    //static float phi_dot = 0, theta_dot = 0;
+
+
     static double prev_min_X, prev_max_X, prev_min_Y, prev_max_Y;
     static int X_event , X_event_brake = 0, Y_event = 0;
 
@@ -331,6 +351,11 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
     static int prev_sign = 0;   //sign flag 1 for pos and -1 for neg and 0 for no threshold crossed
 
     static uint16_t sort_count= 0;
+
+    float p, q, r, phi_dot, theta_dot;
+    static float phi_hat = 0, theta_hat = 0;
+
+
     if(cbk_global%cbk_cnt_min != 0)  //frequency
         return;
 
@@ -355,13 +380,54 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
     qsort(ACCX_BUF2, 5, sizeof(float), floatCompare);
     qsort(ACCY_BUF2, 5, sizeof(float), floatCompare);
     qsort(ACCZ_BUF2, 5, sizeof(float), floatCompare);
+    qsort(GYRX_BUF2, 5, sizeof(float), floatCompare);
+    qsort(GYRY_BUF2, 5, sizeof(float), floatCompare);
     qsort(GYRZ_BUF2, 5, sizeof(float), floatCompare);
 
 
 
+    //roll and pitch correction
+
+    roll = get_roll_rad(ACCX_BUF2[2], ACCY_BUF2[2], ACCZ_BUF2[2]);
+
+    pitch = get_pitch_rad(ACCX_BUF2[2], ACCY_BUF2[2], ACCZ_BUF2[2]);
+
+    //calculate gyro 
+
+    p -= gyr_bias_x;
+    q -= gyr_bias_y;
+    r -= gyr_bias_z;
+
+    phi_dot = p + sin(phi_hat)*tan(theta_hat)*q + cos(phi_hat)*tan(theta_hat)*r;
+    theta_dot = cos(phi_hat)*q -sin(phi_hat)*r;
+
+    //update complimentary filter
+
+    phi_hat = (1-alpha)*(phi_hat + (T_gyr*phi_dot)) + alpha*pitch;
+    theta_hat = (1-alpha)*(theta_hat + (T_gyr*theta_dot)) + alpha*roll;
+
+
+
+    //printf("tiltX = %0.4f, tiltY = %0.4f\n\r", phi_hat, theta_hat);
+
+
+
+    //printf("roll = %0.2f, pitch = %0.2f \n\r", roll, pitch);
+    
+
+    ACCELX_NRM = ACCX_BUF2[2] + GRV_ACC_CONST*sin(phi_hat);
+    printf("X_NRM = %0.2f, off = %0.4f  ", ACCELX_NRM, GRV_ACC_CONST*sin(pitch));
+
+
+    ACCELY_NRM = ACCY_BUF2[2] - GRV_ACC_CONST*sin(theta_hat);
+    printf("Y_NRM = %0.2f, off = %0.4f\n", ACCELY_NRM, GRV_ACC_CONST*sin(roll));
+
+
+    fprintf(fp, "\n%ld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,,,%.6f,%.6f,%.6f,%.6f,"
+        ,t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ,phi_hat,theta_hat,ACCELX_NRM,ACCELY_NRM);
 
     //acceleration start
-    if(ACCX_BUF2[2] > x_threshold_pos && !X_event_ongoing && !prev_sign)  //median
+    if(ACCELX_NRM > x_threshold_pos && !X_event_ongoing && !prev_sign)  //median
     {
         prev_sign = 1; //accel start
         X_event_ongoing = 1;
@@ -369,7 +435,7 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
     }
 
     //braking start
-    else if(ACCX_BUF2[2] < x_threshold_neg && !X_event_ongoing  &&  !prev_sign)
+    else if(ACCELX_NRM < x_threshold_neg && !X_event_ongoing  &&  !prev_sign)
     {
         prev_sign = -1; //braking start
         X_event_ongoing = 1;  
@@ -377,33 +443,35 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
 
 
     //if under lower thresh, evaulate event end
-    else if(fabs(ACCX_BUF2[2])<x_threshold_lower && prev_sign!= 0 && X_event_ongoing)
+    else if(fabs(ACCELX_NRM)<x_threshold_lower && prev_sign!= 0 && X_event_ongoing)
     {
         //harsh braking/acceleration
         X_event += 1;
-        if(X_event> 4)
+        if(X_event> 2)
         {   //TBD
             //event detected (hard thresh)
             X_event = 0;
 
             if(prev_sign == 1)
             {
+
                 printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< HARD ACCELERATION EVENT >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
                 if(recording)  //start recording
                 {
                     t_stamp = times(&tms0);
-                    fprintf(fp, "%ld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d\n",t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ, 1);
+                    fprintf(fp, "\n%ld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d",t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ, 1);
                 }
 
             }
 
             else if(prev_sign == -1)
             {
+
                 printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< HARD BRAKING EVENT >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
                 if(recording)  //start recording
                 {
                     t_stamp = times(&tms0);
-                    fprintf(fp, "%ld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d\n",t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ, -1);
+                    fprintf(fp, "%\nld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d",t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ, -1);
                 }
             }
 
@@ -417,15 +485,15 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
 
 
     //hard turn event
-    if(fabs(ACCY_BUF2[2]) > y_threshold && fabs(GYRZ_BUF2[2])>gyr_z_threshold  &&  !Y_event_ongoing)  
+    if(fabs(ACCELY_NRM) > y_threshold && fabs(GYRZ_BUF2[2])>gyr_z_threshold  &&  !Y_event_ongoing)  
     {
       Y_event_ongoing = 1;  //harsh turn start
     }
 
-    else if(fabs(ACCY_BUF2[2]) < y_threshold && fabs(GYRZ_BUF2[2])<gyr_z_threshold_lower  &&  Y_event_ongoing)
+    else if(fabs(ACCELY_NRM) < y_threshold && fabs(GYRZ_BUF2[2])<gyr_z_threshold_lower  &&  Y_event_ongoing)
     {
        Y_event += 1; 
-       if(Y_event>4)
+       if(Y_event>2)
        {
             Y_event = 0;
             Y_event_ongoing = 0;
@@ -433,7 +501,7 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
             if(recording)  //start recording
             {
                 t_stamp = times(&tms0);
-                fprintf(fp, "%ld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d\n",t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ, 2);
+                fprintf(fp, "%\nld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d",t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ, 2);
             }
        }
     }
@@ -445,45 +513,57 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
 }
 
 
+void read_imu_i2c(double* AX, double* AY, double* AZ, double* GX, double* GY, double* GZ)
+{
+    int iRet = 0;
+        iRet = MEMS_Read(&fd_i2c, MEMS_rec_buff);
+        if(iRet<0)
+        {
+            printf("i2c read failed\n");
+        }
+
+        gyroX_shifted = (int16_t)MEMS_rec_buff[1];
+        gyroX_shifted = (gyroX_shifted * 256) + (int16_t)(MEMS_rec_buff[0]);
+
+        gyroY_shifted = (int16_t)MEMS_rec_buff[3];
+        gyroY_shifted = (gyroY_shifted * 256) + (int16_t)(MEMS_rec_buff[2]);
+
+        gyroZ_shifted = (int16_t)MEMS_rec_buff[5];
+        gyroZ_shifted = (gyroZ_shifted * 256) + (int16_t)(MEMS_rec_buff[4]);
 
 
-void MEMS_process_data(uint8_t* MEMS_r_buff)
+        AccelX_shifted = (int16_t)MEMS_rec_buff[7];
+        AccelX_shifted = (AccelX_shifted * 256) + (int16_t)(MEMS_rec_buff[6]);
+
+        AccelY_shifted = (int16_t)MEMS_rec_buff[9];
+        AccelY_shifted = (AccelY_shifted * 256) + (int16_t)(MEMS_rec_buff[8]);
+
+        AccelZ_shifted = (int16_t)MEMS_rec_buff[11];
+        AccelZ_shifted = (AccelZ_shifted * 256) + (int16_t)(MEMS_rec_buff[10]);
+
+
+        *AX = AccelX_shifted * accel_scaling_factor;
+        *AY = AccelY_shifted * accel_scaling_factor;
+        *AZ = AccelZ_shifted * accel_scaling_factor;
+
+        *GX = (gyroX_shifted * gyro_scaling_factor) - gyro_offset_X;
+        *GY = (gyroY_shifted * gyro_scaling_factor) - gyro_offset_Y;
+        *GZ = (gyroZ_shifted * gyro_scaling_factor) - gyro_offset_Z;
+
+}
+
+
+
+void MEMS_process_data()
 {
 
-
-        gyroX_shifted = (int16_t)MEMS_r_buff[1];
-        gyroX_shifted = (gyroX_shifted * 256) + (int16_t)(MEMS_r_buff[0]);
-
-        gyroY_shifted = (int16_t)MEMS_r_buff[3];
-        gyroY_shifted = (gyroY_shifted * 256) + (int16_t)(MEMS_r_buff[2]);
-
-        gyroZ_shifted = (int16_t)MEMS_r_buff[5];
-        gyroZ_shifted = (gyroZ_shifted * 256) + (int16_t)(MEMS_r_buff[4]);
-
-
-        AccelX_shifted = (int16_t)MEMS_r_buff[7];
-        AccelX_shifted = (AccelX_shifted * 256) + (int16_t)(MEMS_r_buff[6]);
-
-        AccelY_shifted = (int16_t)MEMS_r_buff[9];
-        AccelY_shifted = (AccelY_shifted * 256) + (int16_t)(MEMS_r_buff[8]);
-
-        AccelZ_shifted = (int16_t)MEMS_r_buff[11];
-        AccelZ_shifted = (AccelZ_shifted * 256) + (int16_t)(MEMS_r_buff[10]);
-
-
-        AccelX = AccelX_shifted * accel_scaling_factor;
-        AccelY = AccelY_shifted * accel_scaling_factor;
-        AccelZ = AccelZ_shifted * accel_scaling_factor;
-
-        gyroX = (gyroX_shifted * gyro_scaling_factor) - gyro_offset_X;
-        gyroY = (gyroY_shifted * gyro_scaling_factor) - gyro_offset_Y;
-        gyroZ = (gyroZ_shifted * gyro_scaling_factor) - gyro_offset_Z;
+        read_imu_i2c(&AccelX, &AccelY, &AccelZ, &gyroX, &gyroY, &gyroZ);
 
 
         if(recording)  //start recording
         {
             t_stamp = times(&tms0);
-            fprintf(fp, "%ld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d\n",t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ,0);
+            //fprintf(fp, "%ld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d",t_stamp,AccelX,AccelY,AccelZ,gyroX,gyroY,gyroZ,0);  //no newline, do that after speed
         }
 
         if(event_detect)
@@ -521,7 +601,7 @@ int createAccelReadThread(void)
         printf("ACCEL: Create Accel thread error!\n");
         return 0;
     }
-    printf("ACCEL: Accel thread TID: %lu\n", accel_tid);
+    printf("\n\rACCEL: Accel thread TID: %lu\n", accel_tid);
     return 1;
 
 
@@ -530,13 +610,13 @@ int createAccelReadThread(void)
 void pollPidISO()
 {
     static int i = 0;
+    uint8_t speed;
     uint16_t noOfBytesRead;
-    //while(i < 8)
-    //{
+
         bufWrite[0] = 0x01;
         bufWrite[1] = 0x0D;
         can_isotp_send(2, bufWrite);
-        printf("%d Tx %.2X %.2X %.2X %.2X %.2X %.2X %.2X\n", i, bufWrite[0],bufWrite[1],bufWrite[2], bufWrite[3], bufWrite[4],bufWrite[5],bufWrite[6]);
+        //printf("%d Tx %.2X %.2X %.2X %.2X %.2X %.2X %.2X\n", i, bufWrite[0],bufWrite[1],bufWrite[2], bufWrite[3], bufWrite[4],bufWrite[5],bufWrite[6]);
 
         memset(readBuf, 0, sizeof readBuf);
         can_isotp_recv(readBuf, &noOfBytesRead);
@@ -544,28 +624,43 @@ void pollPidISO()
 
         if(noOfBytesRead > 0)
         {
-            printf("%d Rx %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X\n\n", i, noOfBytesRead, readBuf[0],readBuf[1],readBuf[2],readBuf[3],readBuf[4],readBuf[5],readBuf[6]);
+            //printf("%d Rx %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X\n\n", i, noOfBytesRead, readBuf[0],readBuf[1],readBuf[2],readBuf[3],readBuf[4],readBuf[5],readBuf[6]);
+            speed = readBuf[2]; // 0D = vehicle speed
+            printf("\n__________________speed = %d\n", speed);
+            if(recording)  //start recording
+            {
+                t_stamp = times(&tms0);
+                fprintf(fp, ",%d\n", speed);  //event is a column before speed
+            }
+
         }
-        //else continue;
-        
-        //sleep(2);
-        i++;
-    //}
-    printf("done\n");
 
 }
 
 
-float get_roll(float AccelX, float AccelY, float AccelZ)    //get roll
+float get_roll_deg(float AccelX, float AccelY, float AccelZ)    //get roll
 {
 
     return atan2(AccelY, (sqrt(pow(AccelX,2)  +  pow(AccelZ,2) )))  *   rad_to_deg;
 
 }
 
-float get_pitch(float AccelX, float AccelY, float AccelZ)
+float get_pitch_deg(float AccelX, float AccelY, float AccelZ)
 {
     return atan2( -AccelX,-AccelZ )  * rad_to_deg;
+}
+
+
+float get_roll_rad(float AccelX, float AccelY, float AccelZ)    //get roll
+{
+
+    return atan2(AccelY, (sqrt(pow(AccelX,2)  +  pow(AccelZ,2) )));
+
+}
+
+float get_pitch_rad(float AccelX, float AccelY, float AccelZ)
+{
+    return atan2( -AccelX,-AccelZ );
 }
 
 int MEMS_Read(int* fd_i2c ,uint8_t* MEMS_r_buff)               //read gyroscope and accelaration values
@@ -832,6 +927,8 @@ void MEMS_process_moving_avg(int window, int step, int cbk_cnt_min, int cbk_glob
     float sumAccX = 0, sumAccY =0, sumAccZ = 0;
     float sumGyrX = 0, sumGyrY =0, sumGyrZ = 0;
 
+    static float sigGYRX = 0, sigGYRY = 0;
+
     if(cbk_global%cbk_cnt_min != 0)
         return;
     
@@ -864,11 +961,27 @@ void MEMS_process_moving_avg(int window, int step, int cbk_cnt_min, int cbk_glob
         }
 
         //printf("\n\r GYRX = %.6f , GYRY = %.6f , GYRZ = %.6f   \n\r" , GYRX_BUF1[BUF1_index-1], GYRY_BUF1[BUF1_index-1], GYRZ_BUF1[BUF1_index-1]);
-        printf("\n\r ACCELX = %.3f , ACCELY = %.3f , ACCELZ = %.3f   \n\r" , ACCX_BUF1[BUF1_index], ACCY_BUF1[BUF1_index], ACCZ_BUF1[BUF1_index]);
+        //printf("\n\r ACCELX = %.3f , ACCELY = %.3f , ACCELZ = %.3f   \n\r" , ACCX_BUF1[BUF1_index], ACCY_BUF1[BUF1_index], ACCZ_BUF1[BUF1_index]);
         //printf("\n\r sum1 = %.3f , sum2 = %.3f , sum3 = %.3f   \n\r" , sumAccX, sumAccY, sumAccZ);
+
+        
     
 }
 
+void calculate_gyro_bias()
+{
+    int i = 0;
+    for(i =0; i<200; i++)
+    {
+        read_imu_i2c(&AccelX, &AccelY, &AccelZ, &gyroX, &gyroY, &gyroZ);
+        gyr_bias_x +=  gyroX;
+        gyr_bias_y +=  gyroY;
+        gyr_bias_z +=  gyroZ;
+        usleep(20 * 1000);
+    }
+
+    gyr_bias_x /= 200;gyr_bias_y /= 200;gyr_bias_z /= 200;
+}
 
 
 
