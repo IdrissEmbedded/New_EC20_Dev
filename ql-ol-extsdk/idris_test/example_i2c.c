@@ -500,6 +500,23 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
 }
 
 
+void read_imu_i2c(double* AX, double* AY, double* AZ, double* GX, double* GY, double* GZ)
+{
+    int iRet = 0;
+        iRet = MEMS_Read(&fd_i2c, MEMS_rec_buff);
+        if(iRet<0)
+        {
+            printf("i2c read failed\n");
+        }
+
+        gyroX_shifted = (int16_t)MEMS_rec_buff[1];
+        gyroX_shifted = (gyroX_shifted * 256) + (int16_t)(MEMS_rec_buff[0]);
+
+        gyroY_shifted = (int16_t)MEMS_rec_buff[3];
+        gyroY_shifted = (gyroY_shifted * 256) + (int16_t)(MEMS_rec_buff[2]);
+
+        gyroZ_shifted = (int16_t)MEMS_rec_buff[5];
+        gyroZ_shifted = (gyroZ_shifted * 256) + (int16_t)(MEMS_rec_buff[4]);
 
 void read_imu_i2c(double* AX, double* AY, double* AZ, double* GX, double* GY, double* GZ)
 {
@@ -662,6 +679,19 @@ float get_roll_acc(float AccelX, float AccelY, float AccelZ)    //get roll
 }
 
 float get_pitch_acc(float AccelX, float AccelY, float AccelZ)
+{
+    return atan2( -AccelX,-AccelZ );
+}
+
+
+float get_roll_rad(float AccelX, float AccelY, float AccelZ)    //get roll
+{
+
+    return atan2(AccelY, (sqrt(pow(AccelX,2)  +  pow(AccelZ,2) )));
+
+}
+
+float get_pitch_rad(float AccelX, float AccelY, float AccelZ)
 {
     return atan2( -AccelX,-AccelZ );
 }
