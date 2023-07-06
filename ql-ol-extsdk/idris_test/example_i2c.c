@@ -662,12 +662,12 @@ void pollPidISO()
 
 float get_tilt_X_deg()
 {
-    return phi_hat;
+    return phi_hat * rad_to_deg;
 }
 
 float get_tilt_Y_deg()
 {
-    return theta_hat;
+    return theta_hat * rad_to_deg;
 }
 
 
