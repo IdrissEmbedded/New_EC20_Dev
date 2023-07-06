@@ -55,10 +55,15 @@
 #include <stdint.h>
 #include <linux/can.h>
 #include "../../../../MTB_CE_EV-ECU_FOTA/ECU_FOTA/Kernel_Modules/can_isotp/isotp.h"
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <errno.h>
 
 #define NO_CAN_ID 0xFFFFFFFFU
 #define BUFSIZE 5000 /* size > 4095 to check socket API internal checks */
 int s;
+
+int guard(int n, char * err) { if (n == -1) { perror(err); exit(1); } return n; }
 
 int can_isotp_connect(uint32_t sourceAddr, uint32_t destAddr, bool txPadding, uint8_t txPaddingByte)
 {
@@ -124,6 +129,9 @@ int can_isotp_connect(uint32_t sourceAddr, uint32_t destAddr, bool txPadding, ui
         close(s);
         return -1;
     }
+
+    int flags = guard(fcntl(s, F_GETFL), "could not get file flags");
+    guard(fcntl(s, F_SETFL, flags | O_NONBLOCK), "could not set file flags");
     return 0;
 }
 
