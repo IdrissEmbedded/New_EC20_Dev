@@ -305,6 +305,11 @@ void* accelRead_func(void* arg)
                                     //  +X     -X   X_min  +-Y   +-Z   Zmin
         MEMS_process_harsh_accel(25, 5, 0.2, -0.20, 0.05 , 0.1 , 4.5 , 1 ,  5, callback_count);
 
+        //Harsh braking: -0.20
+        //Harsh Acell: +0.2
+        //Rash turn: +4.5 (+Z axis)
+
+        
         /*if(callback_count%50 == 0) // every 1 sec 
             //pollPidISO();
             while(0);
