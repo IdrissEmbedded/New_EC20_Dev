@@ -57,7 +57,7 @@
 #define ORIENT_CFG_G             0x0B
 #define INT1_CTRL                0x0D
 #define INT2_CTRL                0x0E
-#define WHO_AM_I                 0x0F
+#define WHO_AM_I_LSM             0x0F
 #define CTRL1_XL                 0x10
 #define CTRL2_G                  0x11
 #define CTRL3_C                  0x12
@@ -120,6 +120,28 @@
 #define OUT_MAG_RAW_Z_L          0x6A
 #define OUT_MAG_RAW_Z_H          0x6B
 #define CTRL_SPIAux              0x70
+
+
+
+//ICM-42670-P 
+#define DEVADDR                 (0x69)
+#define Accel_Sens_2g_ICM      (16384)                     // At FS 2g, 16384 raw reading means 1g acclearation
+#define Gyro_Sens_2g_ICM        (131)
+#define G                       (9.8)   
+#define PI                      (3.1415)   
+
+// Offset values
+#define ICMOFFX                 (-64)
+#define ICMOFFY                 (-75)
+#define ICMOFFZ                 (180)           // Original was 455
+
+#define WHO_AM_I_ICM             0x75
+#define PWR_MGMT0                0x1F         //pwr_mgmt reset val: 0x00
+#define GYRO_CONFIG0             0x20         //gyro cfg reset val: 0x06
+#define ACCEL_CONFIG0            0x21         //accel cfg reset val: 0x06
+#define ACCEL_CONFIG1            0x24         //accel_cfg reset val: 0x41
+#define ICM_ACCEL_DATA_X1        0x0B         //start reading data from here
+
 
 
 //Function declarations

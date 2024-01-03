@@ -26,9 +26,11 @@
 
 
 #define I2C_DEV         "/dev/i2c-2"	//i2c-2 on EC20xx, i2c-4 on AG35
-#define I2C_SLAVE_ADDR  0x6B	//codec 3104
+#define I2C_SLAVE_ADDR_LSM  0x6B	//codec 3104
+#define I2C_SLAVE_ADDR_ICM  0x69
 //#define WHO_AM_I        0x0F
-#define WHO_AM_I_VALUE  0x6A
+#define WHO_AM_I_VALUE_LSM  0x6A
+#define WHO_AM_I_VALUE_ICM  0x67
 
 //#define RAM_BYTE       0x03
 
@@ -67,7 +69,7 @@ static float sigGYRX = 0, sigGYRY = 0;
 
 static double gyr_bias_x = 0, gyr_bias_y = 0, gyr_bias_z = 0;
 static float phi_hat = 0, theta_hat = 0;
-float alpha = 0.25;
+float alpha = 0.5;
 double prev_epsilon;
 
 
@@ -97,6 +99,8 @@ pthread_mutex_t kb_lock, buf2_lock;
 pthread_t accel_tid;
 void* tret;
 int fd_i2c;
+int imu_type;
+
 char dt[14] = "21042023123001";
 
 FILE *fp;
@@ -109,6 +113,13 @@ struct tms {
 }tms0;
 
 
+enum imu_enum
+{
+    NONETYPE = -1,
+    LSM6D3DS = 0,
+    ICM42670 = 1
+
+};
 
 
 int main(int argc, char* argv[])  
@@ -118,6 +129,7 @@ int main(int argc, char* argv[])
 	int x;      
     void* arg;
     int can_ret = -1;
+    
 	static char key_press;
     /*
      * Open I2C device with read-write mode,
@@ -134,9 +146,31 @@ int main(int argc, char* argv[])
     /*
      * Read the response for "who am i".
      */
-    unsigned char rdBuff[2] = {0, 0};
-    iRet = Ql_I2C_Read(fd_i2c, I2C_SLAVE_ADDR, WHO_AM_I, rdBuff, 1);
-    printf("< read i2c iRet=%d, value=0x%x%x >\n", iRet, rdBuff[1], rdBuff[0]);//Little endian
+    uint8_t rdBuff1[2] = {0, 0};
+    uint8_t rdBuff2[2] = {0, 0};
+    iRet = Ql_I2C_Read(fd_i2c, I2C_SLAVE_ADDR_LSM, WHO_AM_I_LSM, rdBuff1, 1);
+    iRet = Ql_I2C_Read(fd_i2c, I2C_SLAVE_ADDR_ICM, WHO_AM_I_ICM, rdBuff2, 1);
+
+    if(rdBuff1[0] == WHO_AM_I_VALUE_LSM)
+    {
+        printf("\n detected LSM 6DS IMU");
+        imu_type = LSM6D3DS;
+        alpha = 0.25;
+    }
+    
+    else if (rdBuff2[0] == WHO_AM_I_VALUE_ICM)
+    {
+        printf("\n detected ICM42670P IMU");
+        imu_type = ICM42670;
+        alpha = 0.5;
+    }
+    else
+    {
+        printf("\n failed to detect IMU");
+        imu_type = NONETYPE;
+    }
+
+    //printf("< read i2c iRet=%d, value=0x%x%x >\n", iRet, rdBuff[1], rdBuff[0]);//Little endian
 
 
     iRet = check_rtc(&fd_i2c);
@@ -176,13 +210,13 @@ int main(int argc, char* argv[])
         return 0;
     */
 
-    if(rdBuff[0] == WHO_AM_I_VALUE)
+    if(imu_type != NONETYPE)
     {
         printf("\n\raccel check OK, starting accel thread\n");
 
         machineEpsilon(0.001);
 
-        //ioctl(fd_i2c, I2C_SLAVE, I2C_SLAVE_ADDR);
+        //ioctl(fd_i2c, I2C_SLAVE, I2C_SLAVE_ADDR_LSM);
 
         err = MEMS_config_data(&fd_i2c);
         if(err<0)
@@ -305,11 +339,6 @@ void* accelRead_func(void* arg)
                                     //  +X     -X   X_min  +-Y   +-Z   Zmin
         MEMS_process_harsh_accel(25, 5, 0.2, -0.20, 0.05 , 0.1 , 4.5 , 1 ,  5, callback_count);
 
-        //Harsh braking: -0.20
-        //Harsh Acell: +0.2
-        //Rash turn: +4.5 (+Z axis)
-
-        
         /*if(callback_count%50 == 0) // every 1 sec 
             //pollPidISO();
             while(0);
@@ -500,38 +529,22 @@ void MEMS_process_harsh_accel(int window /*avg window size*/, int step, double x
 
     sort_count++;
 
-
-
 }
 
 
-void read_imu_i2c(double* AX, double* AY, double* AZ, double* GX, double* GY, double* GZ)
-{
-    int iRet = 0;
-        iRet = MEMS_Read(&fd_i2c, MEMS_rec_buff);
-        if(iRet<0)
-        {
-            printf("i2c read failed\n");
-        }
 
-        gyroX_shifted = (int16_t)MEMS_rec_buff[1];
-        gyroX_shifted = (gyroX_shifted * 256) + (int16_t)(MEMS_rec_buff[0]);
-
-        gyroY_shifted = (int16_t)MEMS_rec_buff[3];
-        gyroY_shifted = (gyroY_shifted * 256) + (int16_t)(MEMS_rec_buff[2]);
-
-        gyroZ_shifted = (int16_t)MEMS_rec_buff[5];
-        gyroZ_shifted = (gyroZ_shifted * 256) + (int16_t)(MEMS_rec_buff[4]);
 
 void read_imu_i2c(double* AX, double* AY, double* AZ, double* GX, double* GY, double* GZ)
 {
     int iRet = 0;
-        iRet = MEMS_Read(&fd_i2c, MEMS_rec_buff);
-        if(iRet<0)
-        {
-            printf("i2c read failed\n");
-        }
+    iRet = MEMS_Read(&fd_i2c, MEMS_rec_buff);
+    if(iRet<0)
+    {
+        printf("i2c read failed\n");
+    }
 
+    if(imu_type == LSM6D3DS)
+    {
         gyroX_shifted = (int16_t)MEMS_rec_buff[1];
         gyroX_shifted = (gyroX_shifted * 256) + (int16_t)(MEMS_rec_buff[0]);
 
@@ -556,10 +569,44 @@ void read_imu_i2c(double* AX, double* AY, double* AZ, double* GX, double* GY, do
         *AY = AccelY_shifted * accel_scaling_factor;
         *AZ = AccelZ_shifted * accel_scaling_factor;
 
-        *GX = (gyroX_shifted * gyro_scaling_factor) 
-        *GY = (gyroY_shifted * gyro_scaling_factor) 
-        *GZ = (gyroZ_shifted * gyro_scaling_factor) 
+        *GX = (gyroX_shifted * gyro_scaling_factor); 
+        *GY = (gyroY_shifted * gyro_scaling_factor); 
+        *GZ = (gyroZ_shifted * gyro_scaling_factor); 
+ 
+    }
 
+    else if(imu_type == ICM42670)
+    {
+        gyroX_shifted = (int16_t)MEMS_rec_buff[6];
+        gyroX_shifted = (gyroX_shifted * 256) + (int16_t)(MEMS_rec_buff[7]);
+
+        gyroY_shifted = (int16_t)MEMS_rec_buff[8];
+        gyroY_shifted = (gyroY_shifted * 256) + (int16_t)(MEMS_rec_buff[9]);
+
+        gyroZ_shifted = (int16_t)MEMS_rec_buff[10];
+        gyroZ_shifted = (gyroZ_shifted * 256) + (int16_t)(MEMS_rec_buff[11]);
+
+
+        AccelX_shifted = (int16_t)MEMS_rec_buff[0];
+        AccelX_shifted = (AccelX_shifted * 256) + (int16_t)(MEMS_rec_buff[1]);
+
+        AccelY_shifted = (int16_t)MEMS_rec_buff[2];
+        AccelY_shifted = (AccelY_shifted * 256) + (int16_t)(MEMS_rec_buff[3]);
+
+        AccelZ_shifted = (int16_t)MEMS_rec_buff[4];
+        AccelZ_shifted = (AccelZ_shifted * 256) + (int16_t)(MEMS_rec_buff[5]);
+
+
+        *AX = (float)AccelX_shifted / Accel_Sens_2g_ICM;
+        *AY = (float)AccelY_shifted / Accel_Sens_2g_ICM;
+        *AZ = (float)AccelZ_shifted / Accel_Sens_2g_ICM;
+
+        *GX = (float)gyroX_shifted / Gyro_Sens_2g_ICM; 
+        *GY = (float)gyroY_shifted / Gyro_Sens_2g_ICM; 
+        *GZ = (float)gyroZ_shifted / Gyro_Sens_2g_ICM; 
+    }
+
+    
 }
 
 
@@ -719,13 +766,13 @@ int MEMS_Read(int* fd_i2c ,uint8_t* MEMS_r_buff)               //read gyroscope 
 
     memset(MEMS_r_buff, 0x00, sizeof MEMS_r_buff); 
 
-    iRet = Ql_I2C_Read(*fd_i2c, I2C_SLAVE_ADDR, OUTX_L_G, MEMS_r_buff, MEMS_READ_BUFF_SIZE);
+    if(imu_type == LSM6D3DS)
+        iRet = Ql_I2C_Read(*fd_i2c, I2C_SLAVE_ADDR_LSM, OUTX_L_G, MEMS_r_buff, MEMS_READ_BUFF_SIZE);
 
-    /*for(i =0; i<MEMS_READ_BUFF_SIZE; i++)
-    {
-        iRet = Ql_I2C_Read(*fd_i2c, I2C_SLAVE_ADDR, OUTX_L_G+i, &MEMS_r_buff[i], 1);
-    }*/
+    else if(imu_type == ICM42670)
+        iRet = Ql_I2C_Read(*fd_i2c, I2C_SLAVE_ADDR_ICM, ICM_ACCEL_DATA_X1, MEMS_r_buff, MEMS_READ_BUFF_SIZE);
 
+    
     return iRet;
 
 }
@@ -737,97 +784,83 @@ int MEMS_config_data(int* fd_i2c)
         int iRet;
         uint8_t MEMS_msg;
 
-        /*MEMS_msg= 0b00000000;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, ORIENT_CFG_G, &MEMS_msg , 1);
+    if(imu_type == LSM6D3DS)      
+    {  /*MEMS_msg= 0b00000000;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, ORIENT_CFG_G, &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
         usleep(100 * 1000);*/
 
        //control register
         MEMS_msg = 0x60;                //0b 0101 0000;     //104Hz rate, +-2G range 400Hz anti aliasing
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL1_XL, &MEMS_msg , 1);
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, CTRL1_XL, &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
-        usleep(10 * 1000);
+        usleep(10 * 100);
 
 
         //control register
         MEMS_msg = 0x68;          //0b 0110 1000;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL2_G, &MEMS_msg , 1);
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, CTRL2_G, &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
-        usleep(10 * 1000);
+        usleep(10 * 100);
 
 
         
         MEMS_msg = 0b01000100;     //Intterrupt active low, increment reg, lower byte LSB
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL3_C , &MEMS_msg , 1);
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, CTRL3_C , &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
-        usleep(10 * 1000);
+        usleep(10 * 100);
  
 
         MEMS_msg = 0b00000000;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL4_C, &MEMS_msg , 1);
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, CTRL4_C, &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
-            usleep(10 * 1000);
+            usleep(10 * 100);
        
 
     
-        /*MEMS_msg = 0b01100000;     //circular rounding self test disable
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL5_C, &MEMS_msg , 1);
+    }
+
+    else if (imu_type == ICM42670)
+    {
+        MEMS_msg = 0x0F;                
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_ICM, PWR_MGMT0, &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
-            usleep(100 * 1000);
+        usleep(10 * 100);
 
 
-
-        MEMS_msg = 0b00000000;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL6_C, &MEMS_msg , 1);
+        MEMS_msg = 0x66;   //GYRO_UI_FS_SEL = 3, fact = 131 (deg/sec)/LSB       
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_ICM, GYRO_CONFIG0, &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
-            usleep(100 * 1000);
+        usleep(10 * 100);
 
 
-        MEMS_msg = 0b01001000;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL7_G, &MEMS_msg , 1);
+        MEMS_msg = 0x66;     
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_ICM, ACCEL_CONFIG0 , &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
-            usleep(100 * 1000);
+        usleep(10 * 100);
+ 
 
-
-
-        MEMS_msg = 0b10000000;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL8_XL, &MEMS_msg , 1);
+        MEMS_msg = 0x47;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_ICM, ACCEL_CONFIG1, &MEMS_msg , 1);
         if(iRet < 0)
             printf("MEMS config fail err = %d\n", iRet);
-            usleep(100 * 1000);
+            usleep(10 * 100);
+    }
 
+    else
+    {
+        printf("\n\rfailed to write IMU config");
+    }
 
-        MEMS_msg = 0b00111000;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL9_XL, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
-            usleep(100 * 1000);
-
-
-        MEMS_msg = 0b00111100;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL10_C, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
-            usleep(100 * 1000);
-
-
-       //control register
-        /*MEMS_msg = 0b00000000;
-        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, MASTER_CONFIG, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d", iRet);
-            usleep(100 * 1000);*/
-
-
-        return iRet;
+    return iRet;
 }
 
 void MEMS_read_config(int* fd_i2c)
@@ -840,11 +873,14 @@ void MEMS_read_config(int* fd_i2c)
     /*if(iRet<0)
         printf("\n\rread failed");*/
 
-    for(i=0; i<15;i++)
-    {
-        iRet =  Ql_I2C_Read(*fd_i2c, I2C_SLAVE_ADDR, ORIENT_CFG_G+i, &temp , 1);
-        printf("MEMS config reg addr: 0x%X val= 0x%X\n", (0x0B +i), temp);
-    }
+    if(imu_type == LSM6D3DS)
+   {
+        for(i=0; i<15;i++)
+        {
+            iRet =  Ql_I2C_Read(*fd_i2c, I2C_SLAVE_ADDR_LSM, ORIENT_CFG_G+i, &temp , 1);
+            printf("MEMS config reg addr: 0x%X val= 0x%X\n", (0x0B +i), temp);
+        }
+   } 
 
 }
 
@@ -856,46 +892,51 @@ int MEMS_config_sleep(int* fd_i2c) // set MEMS option registers. Enable accel an
     int iRet;
     uint8_t MEMS_msg;
 
-           //set 410Hz frequency//2g
-    MEMS_msg = 0x60;
-    iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, CTRL1_XL, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
-        //enable tap on x,y,z axis
-    MEMS_msg = 0x8E;
-    iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, TAP_CFG, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
+    
+    if(imu_type == LSM6D3DS)
+    {
+                   //set 410Hz frequency//2g
+        MEMS_msg = 0x60;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, CTRL1_XL, &MEMS_msg , 1);
+            if(iRet < 0)
+                printf("MEMS config fail err = %d\n", iRet);
+            //enable tap on x,y,z axis
+        MEMS_msg = 0x8E;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, TAP_CFG, &MEMS_msg , 1);
+            if(iRet < 0)
+                printf("MEMS config fail err = %d\n", iRet);
 
-      //set zero wake up duration
-    MEMS_msg = 0x00;
-    iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, WAKE_UP_DUR, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
+          //set zero wake up duration
+        MEMS_msg = 0x00;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, WAKE_UP_DUR, &MEMS_msg , 1);
+            if(iRet < 0)
+                printf("MEMS config fail err = %d\n", iRet);
 
-      //set zero wake up threshold
-    MEMS_msg = 0x00;
-    iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, WAKE_UP_THS, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
+          //set zero wake up threshold
+        MEMS_msg = 0x00;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, WAKE_UP_THS, &MEMS_msg , 1);
+            if(iRet < 0)
+                printf("MEMS config fail err = %d\n", iRet);
 
-            // set single tap interupt(INT1)
-    MEMS_msg = 0x40;
-    iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, MD1_CFG, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
+                // set single tap interupt(INT1)
+        MEMS_msg = 0x40;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, MD1_CFG, &MEMS_msg , 1);
+            if(iRet < 0)
+                printf("MEMS config fail err = %d\n", iRet);
 
-         //set maximum time of an overthreshold signal detection
-    MEMS_msg = 0x06;
-    iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, INT_DUR2, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
+             //set maximum time of an overthreshold signal detection
+        MEMS_msg = 0x06;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, INT_DUR2, &MEMS_msg , 1);
+            if(iRet < 0)
+                printf("MEMS config fail err = %d\n", iRet);
 
-      //6D orientation detection enable & Threshold set by 62.3mg
-    MEMS_msg = 0x41;
-    iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR, TAP_THS_6D, &MEMS_msg , 1);
-        if(iRet < 0)
-            printf("MEMS config fail err = %d\n", iRet);
+          //6D orientation detection enable & Threshold set by 62.3mg
+        MEMS_msg = 0x41;
+        iRet =  Ql_I2C_Write(*fd_i2c, I2C_SLAVE_ADDR_LSM, TAP_THS_6D, &MEMS_msg , 1);
+            if(iRet < 0)
+                printf("MEMS config fail err = %d\n", iRet);
+    }    
+    
 
     return iRet;
 
