@@ -3,133 +3,68 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-//#include "string_format.h"
+#include "string_format.h"
 
 #define MAX_DT_BUFF_LEN 1000
 #define MAX_SEGMENT_LEN 2500
 
 
-struct node_DT_raw
-{
-    struct node_DT_raw* next;
-    char src[3];
-    uint16_t segment_bytes;
-    uint16_t nos_data_bytes;  //headerless
-    uint8_t DT_frames;
-    char dataBuff[200];    //headerless bytes
-    uint16_t lamp_status;  //adding here as only two bytes for each src are same
-};
 
-struct DT_info
-{
-    struct DT_info* next;
-    uint8_t src;
-    char spn[7];        //uint32?
-    uint8_t fmi;           
-    uint8_t oc;            //J1939
-    uint8_t cm;            //J1939
-    char elm_chars[9];  //4 bytes to send to ELM
-};
 
-enum PROTO_TYPE{
-    J1939 = 1,
-    UDS_BB6 = 2
-};
 
-int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* DT_buff_main, int len_main_buff, uint8_t PROTO);
-int check_total_frame_len(char* DT_buff_main);
 void removeSubstring(char *mainString, const char *substring);
 int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t len, uint8_t mFrameCnt);
-void print_parsed_data(struct node_DT_raw* list_HEAD);
 int push_DT_segment_to_list(struct node_DT_raw** list_HEAD, uint8_t* segment_buff, 
 uint8_t total_char_in_segment, uint16_t mFrameBytes, uint8_t mFrameCnt);
-void cleanup_DT_list(struct node_DT_raw* list_HEAD);
-void cleanup_info_list(struct DT_info* list_HEAD);
 int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** info_list_HEAD);
-void print_DT_info(struct DT_info* info_list_HEAD);
+
 
 char DT_buff_main[MAX_DT_BUFF_LEN] = {0x00};
-char DT_buff_main2[MAX_DT_BUFF_LEN+10] = {0x00};
-char segment_buff[MAX_SEGMENT_LEN] = {0x00};
+
 
 uint8_t PROTO;
 
 
 
-//struct node_DT_raw* DT_raw_list = NULL;  //store our DTC here, everytime they arrive
-//char single_frame_buf[250];
-
-   /**Example 
-   * Single-frame string: 18FECA0043FFB804038AFFFF
-   * 		Parts:
-   * 			18FECA00
-   * 				43	byte 1		// lamp status
-   * 				FF	byte 2		// lamp status
-   * 				B8	byte 3		// spn 8 bits
-   * 				04	byte 4		// spn 8 bits
-   * 				03	byte 5		// spn 3 bits + fmi 5bits
-   * 				8A	byte 6		// cm 1 bit + oc 7 bits
-   * 				FFFF			// garbage
-   * 
-   * Multi-frame string: 	00A18EBFF00017FFF640002017818EBFF0002020502FFFFFFFF
-   * 00A 18EBFF00 01 7FFF 64000201 78 18EBFF00 02 020502 FFFFFFFF
-   * 0,0,4,2,64000201,78020502
-   * 		Parts:
-   * 			00A
-   * 			18EBFF00
-   * 				01	byte 1		// Frame no 1
-   * 				7F  byte 2		// lamp status
-   * 				FF	byte 3		// lamp status
-   * 				64	byte 4		// spn1 8 bits
-   * 				00	byte 5		// spn1 8 bits
-   * 				02	byte 6		// spn1 3 bits + fmi 5 bits
-   * 				01	byte 7		// cm 1 bit + oc 7 bits
-   * 				78	byte 8		// spn2 8bits
-   * 			18EBFF00			// skip
-   * 				02	byte 9		// Frame no 2
-   * 				02	byte 10 	// spn2 8bits
-   * 				05	byte 11		// spn2 3 bits + fmi 5bits
-   * 				02	byte 12		// cm 1 bit + oc 7 bits
-   * 			FFFFFFFF			//garbage
-   */
 
 
 
 
 int main()
 {
-    //malformed multi
-    //sprintf(DT_buff_main ,"%s" , "01A-1CEBFF0B0104FF1503027E16-1CEBFF0B0203027E1703027E-1CEBFF0B031803027E220304-1CEBFF0B047E40020E00FFFF-18FECA0003FF00000000FFFF-01A-1CEBFF0B0104FF1503027E16-1CEBFF0B0203027E1703027E-1CEBFF0B031803027E220304----");
-    
-    //sprintf(DT_buff_main, "%s", "DAA");  //DAA
-    
-    //sprintf(DT_buff_main, "%s", "18FECA0003FF00000000");  //malformed single
+    //in this list, raw string data (without headers) will be stored, based on src.
     struct node_DT_raw* DT_raw_list = NULL;
      
+    //In this list, parsed J1939 DTCs will be stored 
     struct DT_info* DT_info_list = NULL;
+
+    //here, formated string to send to FC41D will be stored.
+
     int tot_dtc_parsed = 0;
+
+    char* ELM_buff[400] = {0x00};
+
+    /*DT_buff_main 
+    *   Is the input buffer received from renesas. remove the "" and "DT:" key and copy the string data  
+    *
+    */
 
     //sprintf(DT_buff_main ,"%s" , "01A-1CEBFF0B0104FF1503027E16-1CEBFF0B0203027E1703027E-1CEBFF0B031803027E220304-1CEBFF0B047E40020E00FFFF-18FECA0003FF00000000FFFF-01A-1CEBFF170104FF1503027E16-1CEBFF170203027E1703027E-1CEBFF17031803027E220304-1CEBFF17047E40020E00FFFF----");
     //sprintf(DT_buff_main, "%s", "-18FECA0B04FF16030A03FFFF-18FECA0B04FF16030A03FFFF-022-18EBFF000141FF720000017C-18EBFF000200000117010001-18EBFF000312010001121100-18EBFF000401450500010C04-18EBFF0005000162040001FF-022-18EBFF000141FF720000017C-18EBFF000200000117010001-");
     //sprintf(DT_buff_main, "%s","00E-18EBFF0B0104FF1803057E17-18EBFF0B0203057E2A030E7E-00E-18EBFF170104FF1803057E17-18EBFF170203057E2A030E7E-03A-18EBFF000141FF2306004814-18EBFF00020600199DC20001-18EBFF000347200001A52400-18EBFF000407342000012324-18EBFF0005000147050002A4-18EBFF000624000155240001-18EBFF0007A0210001692200-18EBFF00081E9EC200012D24-18EBFF00091E9EFFFFFFFFFF-");
     //sprintf(DT_buff_main, "%s","00A-1CEBFF0B0104FF1703020815-1CEBFF0B0204020EFFFFFFFF-00A-1CEBFF0B0104FF1703020815-1CEBFF0B0204020EFFFFFFFF-18FECA0040FF69210011FFFF-18FECA0040FF69210011FFFF-18FECA0040FF69210011FFFF-");
     sprintf(DT_buff_main, "%s", "18FECA0003FF00000000FFFF-18FECA0103FF00000000FFFF-18FECA0BC0FF00000000FFFF-18FECA0303FF00000000FFFF-18FECA3D03FF00000000FFFF-18FECA1103FF00000000FFFF-18FECA1300FF0000007FFFFF-18FECA1900FF0000007FFFFF---18FECA2100FF0000007FFFFF-18FECA2A00FF0000007FFFFF-----18FECA7F00FF0000007FFFFF-18FECAE800FF0000007FFFFF-");
-    if(DT_buff_main[0] != '-')  //add - here to keep things consistent
-        sprintf(DT_buff_main2, "-%s-", DT_buff_main);
-
-    else 
-        sprintf(DT_buff_main2, "%s-", DT_buff_main);
-
-    printf("recvd DT:%s\n\r", DT_buff_main2);
     
-    int len = 0;
-    len = check_total_frame_len(DT_buff_main2);  //basic checks
 
-    if(len>0)
+    //Run this block everytime DT is recieved
+    int len = 0;
+    len = check_total_frame_len(DT_buff_main);  //basic checks, adds '-' at beginning if not present
+
+    if(len>0)  //check if null
     {
         printf("\n\rLen main buff = %d",len);
         
-        find_multi_src_frames(&DT_raw_list, DT_buff_main2, len, J1939);
+        find_multi_src_frames(&DT_raw_list, DT_buff_main, len, J1939);  //list ptr, buffer, length, protocol type
 
         struct node_DT_raw* ptr = DT_raw_list;
 
@@ -140,13 +75,20 @@ int main()
         }
 
         //printf("extracted %d DTCs",tot_dtc_parsed);
-        print_parsed_data(DT_raw_list);
-        print_DT_info(DT_info_list);
+        print_parsed_raw_data(DT_raw_list);  //show raw char info
+        print_DT_info(DT_info_list);     //show parsed DTC info
 
-        cleanup_DT_list(DT_raw_list);
+        format_ELM_buff(DT_info_list, ELM_buff);
+
+        //IMPORTANT!!, run cleanup DT_list everytime after find_multi_src_frames populates DT_raw_list 
+        // and extract_dtc_from_raw_hex populates DT_info_list. each object should be cleaned before loop exits.
+        cleanup_DT_list(DT_raw_list);    
         cleanup_info_list(DT_info_list);        
 
     }
+    else
+        return -1;
+
     return 0;
 }
 
@@ -159,18 +101,19 @@ int main()
 */
 int check_total_frame_len(char* DT_buff_main)  //Returns total frame len, and exceptions for garbage data
 {
-    if(DT_buff_main == NULL)
+    char* ptr = DT_buff_main; //passing pointer by reference
+    if(ptr == NULL)
     {
         printf("\n\rNULL in total frame len , skip");
         return 0;
     }
         
-
-    int len_main_buff = strlen(DT_buff_main);
+    
+    int len_main_buff = strlen(ptr);
 
     if(len_main_buff<24)  //always a multiple of 24 (excluding -)
     {
-        if(strstr(DT_buff_main, "DAA"))
+        if(strstr(ptr, "DAA"))
         {
             printf("\n\rno DT info recvd from uC");
             return -1;
@@ -181,6 +124,23 @@ int check_total_frame_len(char* DT_buff_main)  //Returns total frame len, and ex
             return -2;
         }
     }
+
+
+    char* temp = (char*)calloc(MAX_DT_BUFF_LEN+10, sizeof(char));
+    if(ptr[0] != '-')  //add - here to keep things consistent
+    {  
+        sprintf(temp, "-%s-", ptr);
+    }
+    else 
+    {
+        sprintf(temp, "%s-", ptr);
+    }
+
+    memset(ptr, 0x00, sizeof(ptr));
+    strcpy(ptr, temp ); //, sizeof(temp));
+    free(temp);
+
+    printf("recvd DT:%s\n\r", ptr);
 
     return len_main_buff;
 }
@@ -260,6 +220,18 @@ int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** 
     char* data_buf_ptr = (DT_list_node->dataBuff) + 4;
     for(int i = 0; i< nos_dtcs_in_buff; i++) //append remaining nodes
     {
+        // Note: Changed the below arrays of zero dtc strings and garbage dtc strings
+        //var zeroDTCStrings = [ "18FECA0B43FF54000202FFFF", "18FECA0040BF00000000FFFF" ];
+        char* buff_temp[9] = {0x00};
+        strncpy(buff_temp, data_buf_ptr, 8);
+
+        if(strstr(buff_temp,"54000202") != NULL ||  strstr(buff_temp,"00000000") != NULL  
+        ||  strstr(buff_temp,"FFFFFFFF") != NULL  ||  strstr(buff_temp,"0000007F") != NULL)  //skip this zero/garbage DTC
+        {
+            data_buf_ptr+=8;
+            continue;
+        }
+
         struct DT_info* next_node = (struct DT_info*)malloc(sizeof(struct DT_info)); //new DT info node
 
         if(ptr1!=NULL)
@@ -275,6 +247,7 @@ int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** 
         //next_node->spn[0] = xtoi(data_buf_ptr,   1);  //8bit
         //next_node->spn[1] = xtoi(data_buf_ptr+2, 1);  //8bit
         //next_node->spn[2] = ((xtoi(data_buf_ptr+4, 1) >> 5) & 0x07); //3bit(H)
+
         memset(next_node->spn, 0x00, sizeof(next_node->spn));
         strncpy(next_node->spn,data_buf_ptr, 6);  //6 chars
 
@@ -292,6 +265,43 @@ int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** 
     }
 
 }
+void format_ELM_buff(struct DT_info* info_list_HEAD, char* ELM_buff)
+{
+    if(ELM_buff == NULL)
+        return;
+
+    uint8_t nos_DTC = 0;
+
+    char* temp_bytes_buff[400] = {0x00};
+    char* bytes[5] = {0x00};
+
+    memset(ELM_buff, 0x00, sizeof(ELM_buff));
+    sprintf(ELM_buff, "$SDG&S=0&e=0,0,4,");
+
+    while(info_list_HEAD!=NULL)
+    {
+        strcat(temp_bytes_buff,",");
+        strcat(temp_bytes_buff, info_list_HEAD->elm_chars);
+
+        nos_DTC++;
+        info_list_HEAD = info_list_HEAD->next;
+
+    }
+
+    if(nos_DTC == 0);
+    {
+        memset(ELM_buff, 0x00, sizeof(ELM_buff));
+        printf("\n\ryay, no DTC detected :)\n\r");
+    }
+    sprintf(bytes, "%d", nos_DTC);
+    strcat(ELM_buff, bytes);
+    strcat(ELM_buff, temp_bytes_buff);
+
+    printf("\n\r\n\rResponse to ELM: %s\n\r\n\r", ELM_buff);
+
+}
+
+
 
 void print_DT_info(struct DT_info* info_list_HEAD)
 {
@@ -372,7 +382,7 @@ int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t le
 
 }
 
-void print_parsed_data(struct node_DT_raw* list_HEAD)
+void print_parsed_raw_data(struct node_DT_raw* list_HEAD)
 {
     struct node_DT_raw* ptr1 = list_HEAD;
 
@@ -478,11 +488,11 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
     uint8_t multi_frame_cnt = 0;
     uint8_t multi_frame_detected;
     
-    //static struct node_DT_raw* list_HEAD = NULL;
+    char segment_buff[MAX_SEGMENT_LEN] = {0x00};
 
 
     ptr1 = segment_ptr;
-    //leaf conditions
+    //leaf conditions (end recursion)
 
     switch(PROTO)
     {
@@ -516,8 +526,9 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
         break;*/
 
     }
+
     
-        
+    //parsing scheme. Chop the raw chars based on multiframe/singleframe and store in DT_raw_list
     switch(PROTO)
     {
         case J1939:
@@ -542,9 +553,8 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
                 nos_single_frame++;
                 multi_frame_detected = 0;
                 printf("\n\rdetected single frame nos:%d",nos_single_frame);
-                ptr2 = ptr1;  //+1; //skip the '-'
-                total_char_in_segment = 25; 
-
+                ptr2 = ptr1; 
+                total_char_in_segment = 25;
             }
             else
             {
