@@ -42,7 +42,7 @@ int main()
 
     int tot_dtc_parsed = 0;
 
-    char* ELM_buff[400] = {0x00};
+    char* ELD_buff[400] = {0x00};
 
     /*DT_buff_main 
     *   Is the input buffer received from renesas. remove the "" and "DT:" key and copy the string data  
@@ -51,9 +51,9 @@ int main()
 
     //sprintf(DT_buff_main ,"%s" , "01A-1CEBFF0B0104FF1503027E16-1CEBFF0B0203027E1703027E-1CEBFF0B031803027E220304-1CEBFF0B047E40020E00FFFF-18FECA0003FF00000000FFFF-01A-1CEBFF170104FF1503027E16-1CEBFF170203027E1703027E-1CEBFF17031803027E220304-1CEBFF17047E40020E00FFFF----");
     //sprintf(DT_buff_main, "%s", "-18FECA0B04FF16030A03FFFF-18FECA0B04FF16030A03FFFF-022-18EBFF000141FF720000017C-18EBFF000200000117010001-18EBFF000312010001121100-18EBFF000401450500010C04-18EBFF0005000162040001FF-022-18EBFF000141FF720000017C-18EBFF000200000117010001-");
-    //sprintf(DT_buff_main, "%s","00E-18EBFF0B0104FF1803057E17-18EBFF0B0203057E2A030E7E-00E-18EBFF170104FF1803057E17-18EBFF170203057E2A030E7E-03A-18EBFF000141FF2306004814-18EBFF00020600199DC20001-18EBFF000347200001A52400-18EBFF000407342000012324-18EBFF0005000147050002A4-18EBFF000624000155240001-18EBFF0007A0210001692200-18EBFF00081E9EC200012D24-18EBFF00091E9EFFFFFFFFFF-");
+    sprintf(DT_buff_main, "%s","00E-18EBFF0B0104FF1803057E17-18EBFF0B0203057E2A030E7E-00E-18EBFF170104FF1803057E17-18EBFF170203057E2A030E7E-03A-18EBFF000141FF2306004814-18EBFF00020600199DC20001-18EBFF000347200001A52400-18EBFF000407342000012324-18EBFF0005000147050002A4-18EBFF000624000155240001-18EBFF0007A0210001692200-18EBFF00081E9EC200012D24-18EBFF00091E9EFFFFFFFFFF-");
     //sprintf(DT_buff_main, "%s","00A-1CEBFF0B0104FF1703020815-1CEBFF0B0204020EFFFFFFFF-00A-1CEBFF0B0104FF1703020815-1CEBFF0B0204020EFFFFFFFF-18FECA0040FF69210011FFFF-18FECA0040FF69210011FFFF-18FECA0040FF69210011FFFF-");
-    sprintf(DT_buff_main, "%s", "18FECA0003FF00000000FFFF-18FECA0103FF00000000FFFF-18FECA0BC0FF00000000FFFF-18FECA0303FF00000000FFFF-18FECA3D03FF00000000FFFF-18FECA1103FF00000000FFFF-18FECA1300FF0000007FFFFF-18FECA1900FF0000007FFFFF---18FECA2100FF0000007FFFFF-18FECA2A00FF0000007FFFFF-----18FECA7F00FF0000007FFFFF-18FECAE800FF0000007FFFFF-");
+    //sprintf(DT_buff_main, "%s", "18FECA0003FF00000000FFFF-18FECA0103FF00000000FFFF-18FECA0BC0FF00000000FFFF-18FECA0303FF00000000FFFF-18FECA3D03FF00000000FFFF-18FECA1103FF00000000FFFF-18FECA1300FF0000007FFFFF-18FECA1900FF0000007FFFFF---18FECA2100FF0000007FFFFF-18FECA2A00FF0000007FFFFF-----18FECA7F00FF0000007FFFFF-18FECAE800FF0000007FFFFF-");
     
 
     //Run this block everytime DT is recieved
@@ -78,7 +78,7 @@ int main()
         print_parsed_raw_data(DT_raw_list);  //show raw char info
         print_DT_info(DT_info_list);     //show parsed DTC info
 
-        format_ELM_buff(DT_info_list, ELM_buff);
+        format_ELD_buff(DT_info_list, ELD_buff);
 
         //IMPORTANT!!, run cleanup DT_list everytime after find_multi_src_frames populates DT_raw_list 
         // and extract_dtc_from_raw_hex populates DT_info_list. each object should be cleaned before loop exits.
@@ -251,8 +251,8 @@ int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** 
         memset(next_node->spn, 0x00, sizeof(next_node->spn));
         strncpy(next_node->spn,data_buf_ptr, 6);  //6 chars
 
-        memset(next_node->elm_chars, 0x00, sizeof(next_node->elm_chars));
-        strncpy(next_node->elm_chars,data_buf_ptr, 8);  //8 chars
+        memset(next_node->eld_chars, 0x00, sizeof(next_node->eld_chars));
+        strncpy(next_node->eld_chars,data_buf_ptr, 8);  //8 chars
 
         next_node->fmi =  (xtoi(data_buf_ptr+4, 1) & 0x1F);          //5bit(L)
         next_node->cm  =  ((xtoi(data_buf_ptr+6, 1) >> 7) & 0x01);     //1bit(H)
@@ -265,9 +265,9 @@ int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** 
     }
 
 }
-void format_ELM_buff(struct DT_info* info_list_HEAD, char* ELM_buff)
+void format_ELD_buff(struct DT_info* info_list_HEAD, char* ELD_buff)
 {
-    if(ELM_buff == NULL)
+    if(ELD_buff == NULL)
         return;
 
     uint8_t nos_DTC = 0;
@@ -275,29 +275,30 @@ void format_ELM_buff(struct DT_info* info_list_HEAD, char* ELM_buff)
     char* temp_bytes_buff[400] = {0x00};
     char* bytes[5] = {0x00};
 
-    memset(ELM_buff, 0x00, sizeof(ELM_buff));
-    sprintf(ELM_buff, "$SDG&S=0&e=0,0,4,");
+    memset(ELD_buff, 0x00, sizeof(ELD_buff));
+    sprintf(ELD_buff, "$SDG&S=0&e=0,0,4,");
 
     while(info_list_HEAD!=NULL)
     {
         strcat(temp_bytes_buff,",");
-        strcat(temp_bytes_buff, info_list_HEAD->elm_chars);
+        strcat(temp_bytes_buff, info_list_HEAD->eld_chars);
 
         nos_DTC++;
         info_list_HEAD = info_list_HEAD->next;
 
     }
 
-    if(nos_DTC == 0);
+    if(nos_DTC == 0)
     {
-        memset(ELM_buff, 0x00, sizeof(ELM_buff));
+        memset(ELD_buff, 0x00, sizeof(ELD_buff));
         printf("\n\ryay, no DTC detected :)\n\r");
+        return;
     }
     sprintf(bytes, "%d", nos_DTC);
-    strcat(ELM_buff, bytes);
-    strcat(ELM_buff, temp_bytes_buff);
+    strcat(ELD_buff, bytes);
+    strcat(ELD_buff, temp_bytes_buff);
 
-    printf("\n\r\n\rResponse to ELM: %s\n\r\n\r", ELM_buff);
+    printf("\n\r\n\rResponse to ELD: %s\n\r\n\r", ELD_buff);
 
 }
 

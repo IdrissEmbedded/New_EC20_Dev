@@ -19,7 +19,7 @@ struct DT_info
     uint8_t fmi;           
     uint8_t oc;            //J1939
     uint8_t cm;            //J1939
-    char elm_chars[9];  //4 bytes to send to ELM
+    char eld_chars[9];  //4 bytes to send to ELM
 };
 
 enum PROTO_TYPE{
@@ -72,4 +72,4 @@ void print_parsed_raw_data(struct node_DT_raw* list_HEAD);
 void print_DT_info(struct DT_info* info_list_HEAD);
 void cleanup_DT_list(struct node_DT_raw* list_HEAD);
 void cleanup_info_list(struct DT_info* list_HEAD);
-void format_ELM_buff(struct DT_info* info_list_HEAD, char* ELM_buff);
+void format_ELD_buff(struct DT_info* info_list_HEAD, char* ELM_buff);
