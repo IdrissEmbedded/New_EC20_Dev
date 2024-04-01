@@ -7,7 +7,7 @@ struct node_DT_raw
     uint16_t segment_bytes;
     uint16_t nos_data_bytes;  //headerless
     uint8_t DT_frames;
-    char dataBuff[200];    //headerless bytes
+    char dataBuff[300];    //headerless bytes
     uint16_t lamp_status;  //adding here as only two bytes for each src are same
 };
 
@@ -22,15 +22,27 @@ struct DT_info
     char eld_chars[9];  //4 bytes to send to ELM
 };
 
-enum PROTO_TYPE{
-    J1939 = 1,
-    UDS_BB6 = 2
+enum eld_dtc_protocol{
+    eld_dt_obd2 = 1,
+    eld_dt_j1708,
+    eld_dt_j1939,
+    eld_dt_uds3,
+    eld_dt_scn,
+    eld_dt_uds_bb6,
+    eld_dt_iso,
+    eld_dt_kwp
 };
 
 
+#define ELD_BUFF_LEN 400
+
+//Public functions
+char* parse_dtc(uint8_t prt, char * dtc_string); //top level function. 
 
 
-   /**Example  J1939
+
+
+  /**Example  J1939
    * Single-frame string: 18FECA0043FFB804038AFFFF
    * 		Parts:
    * 			18FECA00
@@ -63,13 +75,3 @@ enum PROTO_TYPE{
    * 				02	byte 12		// cm 1 bit + oc 7 bits
    * 			FFFFFFFF			//garbage
    */
-
-
-//Public functions
-int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* DT_buff_main, int len_main_buff, uint8_t PROTO);
-int check_total_frame_len(char* DT_buff_main);
-void print_parsed_raw_data(struct node_DT_raw* list_HEAD);
-void print_DT_info(struct DT_info* info_list_HEAD);
-void cleanup_DT_list(struct node_DT_raw* list_HEAD);
-void cleanup_info_list(struct DT_info* list_HEAD);
-void format_ELD_buff(struct DT_info* info_list_HEAD, char* ELM_buff);
