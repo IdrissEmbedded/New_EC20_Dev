@@ -17,7 +17,7 @@ void print_parsed_raw_data(struct node_DT_raw* list_HEAD);
 void print_DT_info(struct DT_info* info_list_HEAD);
 void cleanup_DT_list(struct node_DT_raw* list_HEAD);
 void cleanup_info_list(struct DT_info* list_HEAD);
-void format_ELD_buff(struct DT_info* info_list_HEAD, char* ELM_buff);
+void format_ELD_buff(struct DT_info* info_list_HEAD, char* ELM_buff, uint8_t PROTO);
 
 
 //Internal
@@ -25,7 +25,7 @@ void removeSubstring(char *mainString, const char *substring);
 int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t len, uint8_t mFrameCnt, uint8_t PROTO);
 int push_DT_segment_to_list(struct node_DT_raw** list_HEAD, uint8_t* segment_buff, 
 uint8_t total_char_in_segment, uint16_t mFrameBytes, uint8_t mFrameCnt, uint8_t PROTO);
-int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** info_list_HEAD);
+int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** info_list_HEAD, uint8_t PROTO);
 
 
 char DT_buff_main[MAX_DT_BUFF_LEN] = {0x00};
@@ -55,12 +55,17 @@ int main()
 
     //sprintf(DT_buff_main ,"%s" , "01A-1CEBFF0B0104FF1503027E16-1CEBFF0B0203027E1703027E-1CEBFF0B031803027E220304-1CEBFF0B047E40020E00FFFF-18FECA0003FF00000000FFFF-01A-1CEBFF170104FF1503027E16-1CEBFF170203027E1703027E-1CEBFF17031803027E220304-1CEBFF17047E40020E00FFFF----");
     //sprintf(DT_buff_main, "%s", "-18FECA0B04FF16030A03FFFF-18FECA0B04FF16030A03FFFF-022-18EBFF000141FF720000017C-18EBFF000200000117010001-18EBFF000312010001121100-18EBFF000401450500010C04-18EBFF0005000162040001FF-022-18EBFF000141FF720000017C-18EBFF000200000117010001-");
-    sprintf(DT_buff_main, "%s","00E-18EBFF0B0104FF1803057E17-18EBFF0B0203057E2A030E7E-00E-18EBFF170104FF1803057E17-18EBFF170203057E2A030E7E-03A-18EBFF000141FF2306004814-18EBFF00020600199DC20001-18EBFF000347200001A52400-18EBFF000407342000012324-18EBFF0005000147050002A4-18EBFF000624000155240001-18EBFF0007A0210001692200-18EBFF00081E9EC200012D24-18EBFF00091E9EFFFFFFFFFF-");
+    //sprintf(DT_buff_main, "%s","00E-18EBFF0B0104FF1803057E17-18EBFF0B0203057E2A030E7E-00E-18EBFF170104FF1803057E17-18EBFF170203057E2A030E7E-03A-18EBFF000141FF2306004814-18EBFF00020600199DC20001-18EBFF000347200001A52400-18EBFF000407342000012324-18EBFF0005000147050002A4-18EBFF000624000155240001-18EBFF0007A0210001692200-18EBFF00081E9EC200012D24-18EBFF00091E9EFFFFFFFFFF-");
     //sprintf(DT_buff_main, "%s","00A-1CEBFF0B0104FF1703020815-1CEBFF0B0204020EFFFFFFFF-00A-1CEBFF0B0104FF1703020815-1CEBFF0B0204020EFFFFFFFF-18FECA0040FF69210011FFFF-18FECA0040FF69210011FFFF-18FECA0040FF69210011FFFF-");
     //sprintf(DT_buff_main, "%s", "18FECA0003FF00000000FFFF-18FECA0103FF00000000FFFF-18FECA0BC0FF00000000FFFF-18FECA0303FF00000000FFFF-18FECA3D03FF00000000FFFF-18FECA1103FF00000000FFFF-18FECA1300FF0000007FFFFF-18FECA1900FF0000007FFFFF---18FECA2100FF0000007FFFFF-18FECA2A00FF0000007FFFFF-----18FECA7F00FF0000007FFFFF-18FECAE800FF0000007FFFFF-");
-    //sprintf(DT_buff_main,"%s","-18DAF100100B590239DB040E-18DAF10021287F020E28040E-18DAF101035902FFFFFFFFFF-18DAF13D10135902FF43150F-18DAF13D2128431510284315-18DAF13D220028870E1F28FF-");
+    //sprintf(DT_buff_main, "%s","-18DAF100100B590239DB040E-18DAF10021287F020E28040E-18DAF101035902FFFFFFFFFF-18DAF13D10135902FF43150F-18DAF13D2128431510284315-18DAF13D220028870E1F28FF-");
+    //sprintf(DT_buff_main, "%s","18DAF100102F5902FFC28200-18DAF1002128C29D00282169-18DAF10022002822A1006814-18DAF100230300AF00730028-18DAF100242BAC00AF2BA300-18DAF10025AF26E200AF26E5-18DAF10026002F22690028AA");
+    
+    //sprintf(DT_buff_main, "%s","0:4305010004011:01130101008700");
 
-    buff_ptr = parse_dtc(eld_dt_j1939, DT_buff_main);
+    sprintf(DT_buff_main, "%s","8CC2039EE406-8CC2039EE406-88C011C2101546B10801B73107F10301FA0747B1-88C009C2110801F50304F701-");
+
+    buff_ptr = parse_dtc(eld_dt_j1708, DT_buff_main);
     printf("\n\rparse DTC: %s\n\r", buff_ptr);
 
     if(buff_ptr != NULL)
@@ -91,39 +96,58 @@ char* parse_dtc(uint8_t prt, char* dtc_string)
     char* ELD_buff = NULL;
 
     if(prt < 1)
+    {
+        printf("\n\r returned NULL from parse_dtc 1");
         return NULL;
+    }
+        
 
     if(dtc_string == NULL)
+    {
+        printf("\n\r returned NULL from parse_dtc 2");
         return NULL;
+    }
 
     int len = 0;
-    len = check_total_frame_len(DT_buff_main);  //basic checks, adds '-' at beginning if not present
+    len = check_total_frame_len(dtc_string);  //basic checks, adds '-' at beginning if not present
 
     if(len>0)  //check if null
     {
         printf("\n\rLen main buff = %d",len);
         
-        find_multi_src_frames(&DT_raw_list, DT_buff_main, len, prt);  //list ptr, buffer, length, protocol type
+        find_multi_src_frames(&DT_raw_list, dtc_string, len, prt);  //list ptr, buffer, length, protocol type
+        printf("\n\rreached here 1");
 
         struct node_DT_raw* ptr = DT_raw_list;
 
+        
+
         while(ptr!=NULL)
         {
-            extract_dtc_from_raw_hex(ptr, &DT_info_list);
+            printf("\n\r in while");
+            extract_dtc_from_raw_hex(ptr, &DT_info_list, prt);
             ptr = ptr->next;
         }
 
-        //printf("extracted %d DTCs",tot_dtc_parsed);
+        printf("extracted %d DTCs",tot_dtc_parsed);
         print_parsed_raw_data(DT_raw_list);  //show raw char info
         
         print_DT_info(DT_info_list);     //show parsed DTC info
 
-        ELD_buff = malloc(sizeof(char)* ELD_BUFF_LEN);
+        ELD_buff = calloc(sizeof(char)* ELD_BUFF_LEN, sizeof(char)); 
 
-        format_ELD_buff(DT_info_list, ELD_buff);
+        if(ELD_buff == NULL)
+        {
+            printf("\n\rmalloc failed, loc 1\n\r");
+            return NULL;
+        }       
+
+        format_ELD_buff(DT_info_list, ELD_buff, prt);
+
+        printf("\n\r reached here 3\n\r");
 
         //IMPORTANT!!, run cleanup DT_list everytime after find_multi_src_frames populates DT_raw_list 
-        // and extract_dtc_from_raw_hex populates DT_info_list. each object should be cleaned before loop exits.
+        // and extract_dtc_from_raw_hex populates DT_info_list. each object should be cleaned before loop exits.*/
         cleanup_DT_list(DT_raw_list);    
         cleanup_info_list(DT_info_list);  
 
@@ -137,6 +161,7 @@ char* parse_dtc(uint8_t prt, char* dtc_string)
         }
         else
         {
+            printf("\n\r returned NULL from parse DTC 3");
             return ELD_buff; //max LEN is 400
         }
 
@@ -167,7 +192,7 @@ int check_total_frame_len(char* DT_buff_main)  //Returns total frame len, and ex
     
     int len_main_buff = strlen(ptr);
 
-    if(len_main_buff<24)  //always a multiple of 24 (excluding -)
+    if(len_main_buff<16)  //always a multiple of 16 (excluding -)
     {
         if(strstr(ptr, "DAA"))
         {
@@ -183,6 +208,13 @@ int check_total_frame_len(char* DT_buff_main)  //Returns total frame len, and ex
 
 
     char* temp = (char*)calloc(MAX_DT_BUFF_LEN+10, sizeof(char));
+
+    if(temp == NULL)
+    {
+        printf("\n\r calloc failed 1\n\r");
+        return 0;
+    }
+
     if(ptr[0] != '-')  //add - here to keep things consistent
     {  
         sprintf(temp, "-%s-", ptr);
@@ -252,14 +284,46 @@ int xtoi(uint8_t *p , uint16_t bytes)
     return k;
 }
 
-int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** info_list_HEAD)
+int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** info_list_HEAD, uint8_t PROTO)
 {
     struct DT_info* ptr1 =  *info_list_HEAD;
     uint8_t tot_dtcs = 0;
     uint8_t nos_dtcs_in_buff = 0;
     uint8_t byte = 0;
    
-    nos_dtcs_in_buff = ((strlen(DT_list_node->dataBuff)/2)-4)/4;  //data-lampbytes/(4 bytes per DTC)
+    char Pcode;
+    uint8_t two_bits = 0;
+    uint8_t nibble = 0;
+    uint8_t nibbles[4];
+    char* data_buf_ptr;
+
+    switch (PROTO)
+    {
+    case eld_dt_j1939:
+        nos_dtcs_in_buff = ((strlen(DT_list_node->dataBuff)/2)-4)/4;  //data-lampbytes/(4 bytes per DTC)
+        data_buf_ptr= (DT_list_node->dataBuff) + 4;
+    break;
+
+    case eld_dt_uds3:
+    case eld_dt_uds_bb6:
+        nos_dtcs_in_buff = ((strlen(DT_list_node->dataBuff)/2)-2)/4;
+        data_buf_ptr= (DT_list_node->dataBuff) + 2;  //first byte is status
+    break;
+
+    case eld_dt_obd2:
+        nos_dtcs_in_buff = (strlen(DT_list_node->dataBuff)/2)/2;   //2 bytes per dtc, no lamp bytes
+        data_buf_ptr = (DT_list_node->dataBuff);
+    break;
+
+    case eld_dt_j1708:
+        nos_dtcs_in_buff = (strlen(DT_list_node->dataBuff)/2)/3;   //3 bytes per dtc, no lamp bytes
+        data_buf_ptr = (DT_list_node->dataBuff);
+    break;
+    
+    default:
+        break;
+    }
+    
 
     //struct DT_info* node = (struct DT_info*)malloc(sizeof(struct DT_info)); //new DT info node
     ptr1 = *info_list_HEAD;
@@ -273,22 +337,48 @@ int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** 
     
 
     //ptr1 = node;
-    char* data_buf_ptr = (DT_list_node->dataBuff) + 4;
+
+    
+        
+    
     for(int i = 0; i< nos_dtcs_in_buff; i++) //append remaining nodes
     {
         // Note: Changed the below arrays of zero dtc strings and garbage dtc strings
         //var zeroDTCStrings = [ "18FECA0B43FF54000202FFFF", "18FECA0040BF00000000FFFF" ];
-        //char buff_temp[9] = {0x00};
-        //strncpy(buff_temp, data_buf_ptr, 8);
+        
 
-        /*if(strstr(buff_temp,"54000202") != NULL ||  strstr(buff_temp,"00000000") != NULL  
-        ||  strstr(buff_temp,"FFFFFFFF") != NULL  ||  strstr(buff_temp,"0000007F") != NULL)  //skip this zero/garbage DTC
+        if(PROTO == eld_dt_j1939)
         {
-            data_buf_ptr+=8;
-            continue;
-        }*/
+            char buff_temp[9] = {0x00};
+            strncpy(buff_temp, data_buf_ptr, 8);
 
-        struct DT_info* next_node = (struct DT_info*)malloc(sizeof(struct DT_info)); //new DT info node
+            if(strstr(buff_temp,"54000202") != NULL ||  strstr(buff_temp,"00000000") != NULL  
+            ||  strstr(buff_temp,"FFFFFFFF") != NULL  ||  strstr(buff_temp,"0000007F") != NULL)  //skip this zero/garbage DTC
+            {
+                data_buf_ptr+=8;  //4 bytes DTC
+                continue;
+            }
+        }
+        else
+        {
+            char buff_temp[9] = {0x00};
+            strncpy(buff_temp, data_buf_ptr, 4);
+
+            if(strstr(buff_temp,"0000") != NULL ||  strstr(buff_temp,"FFFF") != NULL)
+            {
+                data_buf_ptr+=4;  //2 bytes DTC
+                continue;
+            }
+        }
+
+        
+
+        struct DT_info* next_node = (struct DT_info*)calloc(sizeof(struct DT_info), sizeof(char)); //new DT info node
+        if(next_node == NULL)
+        {
+            printf("\n\r malloc failed loc 3");
+            //return 0;
+        }
 
         if(ptr1!=NULL)
         {
@@ -299,29 +389,84 @@ int extract_dtc_from_raw_hex(struct node_DT_raw* DT_list_node, struct DT_info** 
             *info_list_HEAD = next_node;  //init list
         }
 
-        next_node->src = xtoi(DT_list_node->src,1);
-        //next_node->spn[0] = xtoi(data_buf_ptr,   1);  //8bit
-        //next_node->spn[1] = xtoi(data_buf_ptr+2, 1);  //8bit
-        //next_node->spn[2] = ((xtoi(data_buf_ptr+4, 1) >> 5) & 0x07); //3bit(H)
+        switch(PROTO)
+        {
+            case eld_dt_j1939:
+                
 
-        memset(next_node->spn, 0x00, sizeof(next_node->spn));
-        strncpy(next_node->spn,data_buf_ptr, 6);  //6 chars
+                next_node->src = xtoi(DT_list_node->src,1);
+                memset(next_node->spn, 0x00, sizeof(next_node->spn));
+                strncpy(next_node->spn,data_buf_ptr, 6);  //6 chars
+                memset(next_node->eld_chars, 0x00, sizeof(next_node->eld_chars));
+                strncpy(next_node->eld_chars,data_buf_ptr, 8);  //8 chars
+                next_node->fmi =  (xtoi(data_buf_ptr+4, 1) & 0x1F);          //5bit(L)
+                next_node->cm  =  ((xtoi(data_buf_ptr+6, 1) >> 7) & 0x01);     //1bit(H)
+                next_node->oc  =  (xtoi(data_buf_ptr+6, 1) & 0x7F);     //1bit(H)
 
-        memset(next_node->eld_chars, 0x00, sizeof(next_node->eld_chars));
-        strncpy(next_node->eld_chars,data_buf_ptr, 8);  //8 chars
+                data_buf_ptr+=8;
+            break;
 
-        next_node->fmi =  (xtoi(data_buf_ptr+4, 1) & 0x1F);          //5bit(L)
-        next_node->cm  =  ((xtoi(data_buf_ptr+6, 1) >> 7) & 0x01);     //1bit(H)
-        next_node->oc  =  (xtoi(data_buf_ptr+6, 1) & 0x7F);     //1bit(H)
+            case eld_dt_uds3:
+            case eld_dt_uds_bb6:
+            case eld_dt_obd2:
+                
 
-        data_buf_ptr+=8;
+                for(int i =0; i<4 ; i++)
+                {
+                    if(*(data_buf_ptr+i) >= '0' && *(data_buf_ptr+i) <='9')
+                        nibbles[i] = *(data_buf_ptr+i) - '0';  //atoi
+
+                    else if(*(data_buf_ptr+i) >= 'A' && *(data_buf_ptr+i) <= 'F')
+                        nibbles[i] = 10 + (*(data_buf_ptr+i) - 'A');  //atoi
+                }
+
+                two_bits = (nibbles[0]>>2) & 0x03;
+
+                if(two_bits == 0)
+                    Pcode = 'P';
+                else if(two_bits == 1)
+                    Pcode = 'C';
+                else if(two_bits == 2)
+                    Pcode = 'B';
+                else if(two_bits == 3)
+                    Pcode = 'U';
+
+                
+                if(PROTO == eld_dt_obd2)
+                {
+                    sprintf(next_node->spn, "%c%d%d%d%d", Pcode, nibbles[0]&0x03, nibbles[1], nibbles[2], nibbles[3]);
+                    sprintf(next_node->eld_chars, "%c%d%d%d%d", Pcode, nibbles[0]&0x03, nibbles[1], nibbles[2], nibbles[3]);
+                }
+                else
+                {
+                    sprintf(next_node->spn, "%c%d%c%c%c", Pcode, nibbles[0]&0x03, *(data_buf_ptr+1), *(data_buf_ptr+2), *(data_buf_ptr+3));
+                    sprintf(next_node->eld_chars, "%c%d%c%c%c", Pcode, nibbles[0]&0x03, *(data_buf_ptr+1), *(data_buf_ptr+2), *(data_buf_ptr+3));
+                }
+
+                data_buf_ptr+=4;
+
+            break;
+
+            case eld_dt_j1708:
+                next_node->src = xtoi(DT_list_node->src,1);
+
+                memset(next_node->spn, 0x00, sizeof(next_node->spn));
+                strncpy(next_node->spn,data_buf_ptr, 6);
+
+                memset(next_node->eld_chars, 0x00, sizeof(next_node->eld_chars));
+                strncpy(next_node->eld_chars,data_buf_ptr, 6);  //6 chars
+                data_buf_ptr+=6;
+            break;
+
+        }
+        
 
         ptr1 = next_node;
         
     }
 
 }
-void format_ELD_buff(struct DT_info* info_list_HEAD, char* ELD_buff)
+void format_ELD_buff(struct DT_info* info_list_HEAD, char* ELD_buff, uint8_t PROTO)
 {
     if(ELD_buff == NULL)
         return;
@@ -332,7 +477,25 @@ void format_ELD_buff(struct DT_info* info_list_HEAD, char* ELD_buff)
     char bytes[5] = {0x00};
 
     memset(ELD_buff, 0x00, sizeof(ELD_buff));
-    sprintf(ELD_buff, "$SDG&S=0&e=0,0,4,");
+
+    switch (PROTO)
+    {
+    case eld_dt_j1939:
+        sprintf(ELD_buff, "$SDG&S=0&e=0,0,4,");
+    break;
+    
+    case eld_dt_uds3:
+    case eld_dt_obd2:
+        sprintf(ELD_buff, "$SDG&S=0&e=0,0,1,");
+    break;
+
+    case eld_dt_j1708:
+        sprintf(ELD_buff, "$SDG&S=0&e=0,0,2,");
+    
+    default:
+        break;
+    }
+    
 
     while(info_list_HEAD!=NULL)
     {
@@ -393,6 +556,9 @@ int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t le
     char hyph_fc_header[32] = {0x00}; //hyphen + header + frame counter
     char* ptr;
     
+    uint16_t frame_offset_j1708 = 0; 
+    // manually stat through the string to remove substrings
+    
 
     memset(header_buff, 0x00, sizeof(header_buff));
     memset(hyphen_header, 0x00, sizeof(hyphen_header));
@@ -421,8 +587,13 @@ int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t le
                 printf("\n\rno valid frame header found\n\r");
                 return -1;
             }
+
+            memset(NODE->src, 0x00, 5);
+            NODE->src[0] = header_buff[7];
+            NODE->src[1] = header_buff[8];
         break;
 
+        case eld_dt_uds3:
         case eld_dt_uds_bb6:
             ptr = strstr(buff, "18DAF1");
             if(ptr != NULL)
@@ -430,15 +601,22 @@ int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t le
                 strncpy(header_buff , ptr-1, 9);
             }
         break;
+
+        case eld_dt_obd2:
+            ptr = strstr(buff, "0:");
+
+        case eld_dt_j1708:
+            memset(NODE->src, 0x00, 5);
+            strncpy(NODE->src, segment_buff+1, 4);
+            break; //do nothing
+            
     }
         
     //snprintf(hyphen_header,10,"-%s",header_buff);  //-Header
 
-    memset(NODE->src, 0x00, 3);
-    NODE->src[0] = header_buff[7];
-    NODE->src[1] = header_buff[8];
+    
 
-    if(mFrameCnt == 0)
+    if(mFrameCnt == 0)  //single frame header
     {
         switch (PROTO)
         {
@@ -447,9 +625,20 @@ int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t le
             removeSubstring(buff, header_buff);
         break;
 
+        case eld_dt_uds3:
         case eld_dt_uds_bb6:
             memset(hyph_fc_header, 0x00, sizeof(hyph_fc_header));
             strncpy(hyph_fc_header, segment_buff, 15);
+            removeSubstring(buff, hyph_fc_header);
+
+        case eld_dt_obd2:
+        //nothing to do
+        removeSubstring(buff, "-");
+        break;
+
+        case eld_dt_j1708:
+            memset(hyph_fc_header, 0x00, sizeof(hyph_fc_header));
+            strncpy(hyph_fc_header, segment_buff, 7); // (-MID PID N)
             removeSubstring(buff, hyph_fc_header);
         break;
         
@@ -462,15 +651,16 @@ int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t le
 
     else
     {
-        for(int i = 1; i<=mFrameCnt; i++)
+        for(int i = 1; i<=mFrameCnt; i++)  //multi frame header removal
         {
             memset(hyph_fc_header, 0x00, sizeof(hyph_fc_header));
             switch (PROTO)
             {
                 case eld_dt_j1939:
                     sprintf(hyph_fc_header, "%s%.2X",header_buff,i);
-                    break;
+                break;
                 
+                case eld_dt_uds3:
                 case eld_dt_uds_bb6:
                     if(i == 1)  //response frame
                     {
@@ -478,6 +668,18 @@ int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t le
                     }
                     else
                         sprintf(hyph_fc_header, "%s%.2X",header_buff,(0x20 + (i-1)));
+                break;
+
+                case eld_dt_obd2:
+                    removeSubstring(buff, "-");
+                    sprintf(hyph_fc_header, "%d:", (i-1));
+                break;
+
+                case eld_dt_j1708:
+                    strncpy(hyph_fc_header, segment_buff+frame_offset_j1708, (i==1?13:11));
+                    frame_offset_j1708 += (xtoi(hyph_fc_header+5,1)*2) + 7;  //(header + bytecnt + frame)
+                    
+                break;
 
                 default:
                     break;
@@ -485,6 +687,29 @@ int parse_byte_data(struct node_DT_raw* NODE, uint8_t* segment_buff, uint16_t le
             
             removeSubstring(buff, hyph_fc_header);
         }
+    }
+
+    switch (PROTO)  //echo removal
+    {
+        case eld_dt_j1939:
+            //nothing to do
+        break;
+
+        case eld_dt_uds_bb6:
+        case eld_dt_uds3:
+        break;
+
+
+        case eld_dt_obd2:
+            ptr = strstr(buff, "43");  //03 srv
+            if(ptr == NULL)
+                ptr = strstr(buff, "47"); //07 srv
+
+            memset(header_buff, 0x00, sizeof(header_buff));
+            strncpy(header_buff, ptr, 4);
+            removeSubstring(buff, header_buff);
+        break;
+
     }
     strncpy(NODE->dataBuff, buff, strlen(buff));
     NODE->lamp_status = xtoi(NODE->dataBuff, 2);
@@ -602,6 +827,10 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
 
 
     ptr1 = segment_ptr;
+    char sid_1708[3] = {0x00};
+    uint8_t multi_bytes_1708 = 0;
+    uint8_t frame_cnt_1708 = 0;
+    uint8_t chars_in_frame_1708;
     //leaf conditions (end recursion)
 
     switch(PROTO)
@@ -622,6 +851,7 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
         break;
 
         case eld_dt_uds_bb6:
+        case eld_dt_uds3:
             if(len_main_buff<24)  
             {
                 printf("\n\rreached end of DT, exiting");
@@ -633,6 +863,34 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
                 printf("\n\rno valid header found, exiting");
                 return -1;
             }
+        break;
+
+        case eld_dt_obd2:
+            if(len_main_buff<14) // first frame of multiframe is 6 bytes + counter
+            {
+                printf("\n\rreached end of DT, exiting");
+                return -1;
+            }
+
+            if(strstr(ptr1,"43")==NULL  &&  strstr(ptr1,"47")==NULL)  //03/07 echo
+            {
+                printf("\n\rno valid header found, exiting");
+                return -1;
+            }
+
+        case eld_dt_j1708:
+            if(len_main_buff<8)
+            {
+                printf("\n\r reached end of DT string, exiting");
+                return -1;
+            }
+
+            /*if(strstr(ptr1,"-8C")==NULL  &&  strstr(ptr1,"-80")==NULL)  //discuss possible headers
+            {
+                printf("\n\r no valid header found");
+                return -1;
+            }*/
+
         break;
 
     }
@@ -673,7 +931,7 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
             }
         break;
 
-
+        case eld_dt_uds3:
         case eld_dt_uds_bb6: //Todo
             if(strstr(ptr1, "18DAF1") != NULL)
             {
@@ -710,6 +968,92 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
                 break;
             } 
         break;
+
+
+        case eld_dt_obd2:
+            if(strstr(ptr1, "43") !=NULL  ||   strstr(ptr1, "47") !=NULL)
+            {
+                if(*(ptr1+2) == ':') //multiframe counter detected
+                {
+                    ptr2 = ptr1;
+                    nos_multi_frame ++;
+                    multi_frame_detected = 1;
+                    for(int i =0; i<strlen(ptr2); ptr2++)
+                    {
+                        if(*ptr2 == ':')
+                            multi_frame_cnt++;
+                    }
+
+                    multi_frame_bytes = (multi_frame_cnt*7) - 1; //first frame has 6 bytes 
+
+                    if(*(ptr1+1) == '0')  //check if first frame 
+                        total_char_in_segment = strlen(ptr1);  //for now, copy the whole buffer as there is no multi src
+
+                    else
+                        return -1; //something went wrong
+
+                }
+
+                else 
+                {
+                    nos_single_frame++;
+                    multi_frame_detected = 0;
+                    total_char_in_segment = strlen(ptr1);  //single frame
+                } 
+            }
+
+            ptr2 = ptr1;
+
+        break;
+
+
+        case eld_dt_j1708:
+            //multi frame
+            
+            memset(sid_1708, 0x00, sizeof(sid_1708));
+            strncpy(sid_1708,ptr1+3,2);
+            if(strncmp(sid_1708, "C0", 2) == 0)  {
+
+                //if(*ptr1 == '-')
+                    //ptr1++;
+
+                nos_multi_frame ++;
+                multi_frame_detected = 1;
+                //multi_frame_cnt = ((xtoi(ptr1+9, 1) >> 4) & 0x0F)+1;  //upper nible +1
+                
+                multi_frame_bytes = xtoi(ptr1+11, 1);
+                multi_bytes_1708 = multi_frame_bytes; //temp
+
+                ptr2 = ptr1;
+                while(multi_bytes_1708 != 0)
+                {
+                    chars_in_frame_1708 = (xtoi(ptr2+5,1)*2) + 7; //multi_frame_cnt==0?(xtoi(ptr2+5,1)*2) + 7:(xtoi(ptr2+5,1)*2) + 5;
+                    multi_bytes_1708 += multi_frame_cnt==0?2:3; // add 2 or 3 extra bytes of actual SID, frame counter, data bytes (d) 
+                    total_char_in_segment += chars_in_frame_1708;  //one frame
+                    multi_bytes_1708 -= xtoi(ptr2+5,1);
+
+                    ptr2 += chars_in_frame_1708;
+                    multi_frame_cnt++;
+                }
+
+                ptr2 = ptr1;
+                
+            }
+            //single frame
+            else if(strncmp(sid_1708, "C2", 2) == 0)
+            {
+                //if(*ptr1 == '-')  //ignore hyphen
+                    //ptr1++;
+
+                nos_single_frame ++;
+                multi_frame_detected = 0;
+
+                total_char_in_segment = (xtoi(ptr1+5, 1)*2) + 7 ;
+                ptr2 = ptr1;
+            }
+
+        break;
+
     }
 
 
@@ -719,20 +1063,25 @@ int find_multi_src_frames(struct node_DT_raw** list_HEAD, char* segment_ptr, int
     memset(segment_buff , 0x00, sizeof(segment_buff));
     strncpy(segment_buff ,ptr2, total_char_in_segment);
 
-    if(*(ptr2+total_char_in_segment) != '-') //something is wrong
+    if(PROTO != eld_dt_obd2)
     {
-        printf("\n\rmalformed frames");
-        printf("\n\rlast char = %c", *(ptr2+total_char_in_segment));
-        return -1;
-    }
-    else
-    {   
+        if(*(ptr2+total_char_in_segment) != '-') //something is wrong
+        {
+            printf("\n\rmalformed frames");
+            printf("\n\rlast char = %c", *(ptr2+total_char_in_segment));
+            return -1;
+        }
+        else 
+        {   
         int i = 1;
-        while(*(ptr2+total_char_in_segment+i) == '-')  //check for multiple '-'
-            i++;
+            while(*(ptr2+total_char_in_segment+i) == '-')  //check for multiple '-'
+                i++;
             
-        ptr2+=total_char_in_segment + (i-1);  //move ptr2 to start of remaining segment
+            ptr2+=total_char_in_segment + (i-1);  //move ptr2 to start of remaining segment
+        }
     }
+    else if(PROTO == eld_dt_obd2)
+        ptr2+=total_char_in_segment; 
     
     push_DT_segment_to_list(list_HEAD, segment_buff, total_char_in_segment, multi_frame_bytes , multi_frame_cnt, PROTO);
     //printf("total 1st seg = %d, total remaining = %d", total_char_in_segment, strlen(ptr2) );

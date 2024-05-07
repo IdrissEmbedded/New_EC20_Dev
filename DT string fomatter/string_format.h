@@ -3,7 +3,7 @@
 struct node_DT_raw
 {
     struct node_DT_raw* next;
-    char src[3];
+    char src[5];
     uint16_t segment_bytes;
     uint16_t nos_data_bytes;  //headerless
     uint8_t DT_frames;
